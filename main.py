@@ -25,6 +25,7 @@ FIELD_LABELS = {
     "LARGURA": "Largura",
     "COMPRIMENTO": "Comprimento",
 }
+=======
 
 
 @dataclass
@@ -203,14 +204,17 @@ class App(tk.Tk):
 
         self.column_vars = {}
         for idx, field in enumerate(REQUIRED_FIELDS, start=1):
-            ttk.Label(config_frame, text=FIELD_LABELS.get(field, field)).grid(
-                row=idx, column=0, sticky="w", padx=10, pady=5
-            )
-            var = tk.StringVar()
-            combo = ttk.Combobox(config_frame, textvariable=var)
-            combo.grid(row=idx, column=1, sticky="ew", padx=10, pady=5)
-            combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
-            combo.bind("<KeyRelease>", lambda _event: self.save_config())
+ttk.Label(config_frame, text=FIELD_LABELS.get(field, field)).grid(
+    row=idx, column=0, sticky="w", padx=10, pady=5
+)
+
+var = tk.StringVar()
+combo = ttk.Combobox(config_frame, textvariable=var)  # editável (melhor para filtrar)
+combo.grid(row=idx, column=1, sticky="ew", padx=10, pady=5)
+
+combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
+combo.bind("<KeyRelease>", lambda _event: self.save_config())
+
             self.column_vars[field] = (var, combo)
 
         config_frame.columnconfigure(1, weight=1)
