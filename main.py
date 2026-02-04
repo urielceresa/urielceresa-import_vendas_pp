@@ -25,7 +25,6 @@ FIELD_LABELS = {
     "LARGURA": "Largura",
     "COMPRIMENTO": "Comprimento",
 }
-=======
 
 
 @dataclass
@@ -166,6 +165,9 @@ class App(tk.Tk):
         self.processing_thread = None
         self.pause_event = threading.Event()
         self.stop_event = threading.Event()
+        self.countdown_seconds = 5
+        self.countdown_remaining = 0
+        self.countdown_after_id = None
         self._build_ui()
 
     def _build_ui(self):
@@ -188,6 +190,9 @@ class App(tk.Tk):
         self.status_label = ttk.Label(status_frame, text="Status: Aguardando")
         self.status_label.pack(anchor="w", padx=10)
 
+        self.countdown_label = ttk.Label(status_frame, text="Início em: -")
+        self.countdown_label.pack(anchor="w", padx=10)
+
         self.progress = ttk.Progressbar(status_frame, length=400, mode="determinate")
         self.progress.pack(fill="x", padx=10, pady=10)
 
@@ -204,17 +209,14 @@ class App(tk.Tk):
 
         self.column_vars = {}
         for idx, field in enumerate(REQUIRED_FIELDS, start=1):
-ttk.Label(config_frame, text=FIELD_LABELS.get(field, field)).grid(
-    row=idx, column=0, sticky="w", padx=10, pady=5
-)
-
-var = tk.StringVar()
-combo = ttk.Combobox(config_frame, textvariable=var)  # editável (melhor para filtrar)
-combo.grid(row=idx, column=1, sticky="ew", padx=10, pady=5)
-
-combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
-combo.bind("<KeyRelease>", lambda _event: self.save_config())
-
+            ttk.Label(config_frame, text=FIELD_LABELS.get(field, field)).grid(
+                row=idx, column=0, sticky="w", padx=10, pady=5
+            )
+            var = tk.StringVar()
+            combo = ttk.Combobox(config_frame, textvariable=var)
+            combo.grid(row=idx, column=1, sticky="ew", padx=10, pady=5)
+            combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
+            combo.bind("<KeyRelease>", lambda _event: self.save_config())
             self.column_vars[field] = (var, combo)
 
         config_frame.columnconfigure(1, weight=1)
@@ -315,6 +317,9 @@ combo.bind("<KeyRelease>", lambda _event: self.save_config())
         if self.processing_thread and self.processing_thread.is_alive():
             messagebox.showinfo("Info", "Processamento já está em andamento.")
             return
+        if self.countdown_remaining > 0:
+            messagebox.showinfo("Info", "A contagem regressiva já está em andamento.")
+            return
         if pyautogui is None:
             messagebox.showerror(
                 "Erro",
@@ -324,17 +329,33 @@ combo.bind("<KeyRelease>", lambda _event: self.save_config())
         self.stop_event.clear()
         self.pause_event.clear()
         self.progress["value"] = 0
-        self.status_label.config(text="Status: Processando")
         mapping = self.resolve_mapping()
         if not mapping:
             messagebox.showwarning("Aviso", "Configure as colunas antes de iniciar.")
             return
-        self.processing_thread = threading.Thread(
-            target=self._run_processing,
-            args=(mapping,),
-            daemon=True,
-        )
-        self.processing_thread.start()
+        self.countdown_remaining = self.countdown_seconds
+        self.status_label.config(text="Status: Aguardando início")
+        self._update_countdown(mapping)
+
+    def _update_countdown(self, mapping):
+        if self.stop_event.is_set():
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
+            return
+        if self.countdown_remaining <= 0:
+            self.countdown_label.config(text="Início em: 0s")
+            self.status_label.config(text="Status: Processando")
+            self.processing_thread = threading.Thread(
+                target=self._run_processing,
+                args=(mapping,),
+                daemon=True,
+            )
+            self.processing_thread.start()
+            return
+        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
+        self.countdown_remaining -= 1
+        self.countdown_after_id = self.after(1000, lambda: self._update_countdown(mapping))
 
     def _run_processing(self, mapping):
         try:
@@ -347,10 +368,12 @@ combo.bind("<KeyRelease>", lambda _event: self.save_config())
                 self.stop_event,
             )
             self.after(0, lambda: self.status_label.config(text="Status: Finalizado"))
+            self.after(0, lambda: self.countdown_label.config(text="Início em: -"))
         except Exception as exc:
             logging.exception("Erro durante processamento: %s", exc)
             self.after(0, lambda: messagebox.showerror("Erro", str(exc)))
             self.after(0, lambda: self.status_label.config(text="Status: Erro"))
+            self.after(0, lambda: self.countdown_label.config(text="Início em: -"))
 
     def update_progress(self, processed, total):
         self.after(
@@ -376,6 +399,15 @@ combo.bind("<KeyRelease>", lambda _event: self.save_config())
             self.status_label.config(text="Status: Pausado")
 
     def stop_processing(self):
+        if self.countdown_remaining > 0:
+            self.stop_event.set()
+            if self.countdown_after_id is not None:
+                self.after_cancel(self.countdown_after_id)
+                self.countdown_after_id = None
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
+            return
         if not self.processing_thread or not self.processing_thread.is_alive():
             return
         self.stop_event.set()
