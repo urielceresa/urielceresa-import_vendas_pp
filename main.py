@@ -32,7 +32,6 @@ class AppConfig:
     column_mapping: dict
     skip_first_line: bool
     speed_preset: str
-    speed_slider: int
     auto_speed: bool
 
 
@@ -51,7 +50,6 @@ def load_config():
             column_mapping={},
             skip_first_line=True,
             speed_preset="Normal",
-            speed_slider=50,
             auto_speed=False,
         )
     try:
@@ -64,7 +62,6 @@ def load_config():
             column_mapping=column_mapping,
             skip_first_line=data.get("skip_first_line", True),
             speed_preset=data.get("speed_preset", "Normal"),
-            speed_slider=int(data.get("speed_slider", 50)),
             auto_speed=bool(data.get("auto_speed", False)),
         )
     except Exception as exc:
@@ -73,7 +70,6 @@ def load_config():
             column_mapping={},
             skip_first_line=True,
             speed_preset="Normal",
-            speed_slider=50,
             auto_speed=False,
         )
 
@@ -85,7 +81,6 @@ def save_config(config: AppConfig):
                 "column_mapping": config.column_mapping,
                 "skip_first_line": config.skip_first_line,
                 "speed_preset": config.speed_preset,
-                "speed_slider": config.speed_slider,
                 "auto_speed": config.auto_speed,
             },
             file,
@@ -230,7 +225,6 @@ class App(tk.Tk):
         self.column_search_vars = {}
         self.has_header = True
         self.speed_preset_var = tk.StringVar(value=self.config.speed_preset)
-        self.speed_slider_var = tk.IntVar(value=self.config.speed_slider)
         self.auto_speed_var = tk.BooleanVar(value=self.config.auto_speed)
         self._build_ui()
         self.bind("<Escape>", lambda _event: self.stop_processing())
@@ -318,25 +312,12 @@ class App(tk.Tk):
         speed_combo.grid(row=0, column=1, sticky="ew", padx=10, pady=5)
         speed_combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
 
-        ttk.Label(speed_frame, text="Slider (0–100%)").grid(
-            row=1, column=0, sticky="w", padx=10, pady=5
-        )
-        speed_slider = ttk.Scale(
-            speed_frame,
-            from_=0,
-            to=100,
-            orient="horizontal",
-            variable=self.speed_slider_var,
-            command=lambda _value: self.save_config(),
-        )
-        speed_slider.grid(row=1, column=1, sticky="ew", padx=10, pady=5)
-
         ttk.Checkbutton(
             speed_frame,
             text="Modo automático (ajusta se errar)",
             variable=self.auto_speed_var,
             command=self.save_config,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=5)
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=10, pady=5)
 
         speed_frame.columnconfigure(1, weight=1)
 
@@ -440,7 +421,6 @@ class App(tk.Tk):
             column_mapping=mapping,
             skip_first_line=self.skip_var.get(),
             speed_preset=self.speed_preset_var.get(),
-            speed_slider=int(self.speed_slider_var.get()),
             auto_speed=self.auto_speed_var.get(),
         )
         save_config(self.config)
@@ -614,11 +594,9 @@ class App(tk.Tk):
         else:
             base_key = 0.04
             base_delay = 0.25
-        slider_ratio = max(0.0, min(self.speed_slider_var.get() / 100.0, 1.0))
-        multiplier = 1.5 - slider_ratio
         return {
-            "key_interval": base_key * multiplier,
-            "field_delay": base_delay * multiplier,
+            "key_interval": base_key,
+            "field_delay": base_delay,
             "auto_speed": self.auto_speed_var.get(),
         }
 
