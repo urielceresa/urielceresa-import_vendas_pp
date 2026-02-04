@@ -167,6 +167,7 @@ class App(tk.Tk):
         self.stop_event = threading.Event()
         self.countdown_seconds = 5
         self.countdown_remaining = 0
+        self.countdown_after_id = None
         self._build_ui()
 
     def _build_ui(self):
@@ -316,6 +317,9 @@ class App(tk.Tk):
         if self.processing_thread and self.processing_thread.is_alive():
             messagebox.showinfo("Info", "Processamento já está em andamento.")
             return
+        if self.countdown_remaining > 0:
+            messagebox.showinfo("Info", "A contagem regressiva já está em andamento.")
+            return
         if pyautogui is None:
             messagebox.showerror(
                 "Erro",
@@ -329,36 +333,34 @@ class App(tk.Tk):
         if not mapping:
             messagebox.showwarning("Aviso", "Configure as colunas antes de iniciar.")
             return
-        self.processing_thread = threading.Thread(
-            target=self._run_processing,
-            args=(mapping,),
-            daemon=True,
-        )
-        self.processing_thread.start()
+        self.countdown_remaining = self.countdown_seconds
+        self.status_label.config(text="Status: Aguardando início")
+        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
+        self.update_idletasks()
+        self._update_countdown(mapping)
+
+    def _update_countdown(self, mapping):
+        if self.stop_event.is_set():
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
+            return
+        if self.countdown_remaining <= 0:
+            self.countdown_label.config(text="Início em: 0s")
+            self.status_label.config(text="Status: Processando")
+            self.processing_thread = threading.Thread(
+                target=self._run_processing,
+                args=(mapping,),
+                daemon=True,
+            )
+            self.processing_thread.start()
+            return
+        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
+        self.countdown_remaining -= 1
+        self.countdown_after_id = self.after(1000, lambda: self._update_countdown(mapping))
 
     def _run_processing(self, mapping):
         try:
-            self.after(
-                0,
-                lambda: self.status_label.config(text="Status: Iniciando em 5 segundos..."),
-            )
-            self.countdown_remaining = self.countdown_seconds
-            while self.countdown_remaining > 0:
-                if self.stop_event.is_set():
-                    self.after(0, lambda: self.status_label.config(text="Status: Parado"))
-                    self.after(0, lambda: self.countdown_label.config(text="Início em: -"))
-                    return
-                self.after(
-                    0,
-                    lambda remaining=self.countdown_remaining: self.countdown_label.config(
-                        text=f"Início em: {remaining}s"
-                    ),
-                )
-                time.sleep(1)
-                self.countdown_remaining -= 1
-
-            self.after(0, lambda: self.status_label.config(text="Status: Processando"))
-
             process_file(
                 self.file_path,
                 mapping,
@@ -399,16 +401,21 @@ class App(tk.Tk):
             self.status_label.config(text="Status: Pausado")
 
     def stop_processing(self):
+        if self.countdown_remaining > 0:
+            self.stop_event.set()
+            if self.countdown_after_id is not None:
+                self.after_cancel(self.countdown_after_id)
+                self.countdown_after_id = None
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
+            return
         if not self.processing_thread or not self.processing_thread.is_alive():
             return
         self.stop_event.set()
         self.pause_event.clear()
         self.pause_button.config(text="Pausar")
-        if self.countdown_remaining > 0:
-            self.status_label.config(text="Status: Parado")
-            self.countdown_label.config(text="Início em: -")
-        else:
-            self.status_label.config(text="Status: Parando")
+        self.status_label.config(text="Status: Parando")
 
 
 if __name__ == "__main__":
