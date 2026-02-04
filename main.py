@@ -216,7 +216,7 @@ class App(tk.Tk):
         super().__init__()
         ensure_logging()
         self.title(APP_TITLE)
-        self.geometry("300x520")
+        self.geometry("420x650")
         self.config = load_config()
         self.file_path = ""
         self.total_lines = 0
@@ -229,7 +229,6 @@ class App(tk.Tk):
         self.column_values = []
         self.column_search_vars = {}
         self.has_header = True
-        self.prep_window = None
         self.speed_preset_var = tk.StringVar(value=self.config.speed_preset)
         self.speed_slider_var = tk.IntVar(value=self.config.speed_slider)
         self.auto_speed_var = tk.BooleanVar(value=self.config.auto_speed)
@@ -490,8 +489,15 @@ class App(tk.Tk):
         if not mapping or any(field not in mapping for field in REQUIRED_FIELDS):
             messagebox.showwarning("Aviso", "Configure todas as colunas antes de iniciar.")
             return
-        self.set_controls_state("preparing")
-        self.show_preparation(mapping)
+        self.set_controls_state("countdown")
+        if self.countdown_after_id is not None:
+            self.after_cancel(self.countdown_after_id)
+            self.countdown_after_id = None
+        self.countdown_remaining = self.countdown_seconds
+        self.status_label.config(text=f"Status: Iniciando em {self.countdown_remaining}...")
+        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
+        self.update_idletasks()
+        self._update_countdown(mapping)
 
     def _update_countdown(self, mapping):
         if self.stop_event.is_set():
@@ -576,13 +582,6 @@ class App(tk.Tk):
                 self.status_label.config(text="Status: Pausado")
 
     def stop_processing(self):
-        if self.prep_window is not None:
-            self.stop_event.set()
-            self.prep_window.destroy()
-            self.prep_window = None
-            self._reset_countdown_ui(status="Status: Parado")
-            self.set_controls_state("idle")
-            return
         if self.countdown_remaining > 0:
             self.stop_event.set()
             if self.countdown_after_id is not None:
@@ -623,53 +622,11 @@ class App(tk.Tk):
             "auto_speed": self.auto_speed_var.get(),
         }
 
-    def show_preparation(self, mapping):
-        if self.prep_window is not None:
-            return
-        self.prep_window = tk.Toplevel(self)
-        self.prep_window.title("Preparação")
-        self.prep_window.geometry("360x180")
-        self.prep_window.transient(self)
-        self.prep_window.grab_set()
-        message = (
-            "Preparação:\n\n"
-            "1) Clique no campo Objeto no sistema.\n"
-            "2) Volte para esta janela.\n"
-            "3) Pressione F8 para confirmar o foco.\n\n"
-            "ESC ou Parar cancelam."
-        )
-        ttk.Label(self.prep_window, text=message, justify="left").pack(
-            fill="x", padx=10, pady=10
-        )
-        ttk.Button(self.prep_window, text="Confirmar (F8)", command=lambda: self.finish_preparation(mapping)).pack(
-            pady=5
-        )
-        self.prep_window.bind("<F8>", lambda _event: self.finish_preparation(mapping))
-        self.prep_window.protocol("WM_DELETE_WINDOW", self.stop_processing)
-
-    def finish_preparation(self, mapping):
-        if self.prep_window is not None:
-            self.prep_window.destroy()
-            self.prep_window = None
-        self.set_controls_state("countdown")
-        if self.countdown_after_id is not None:
-            self.after_cancel(self.countdown_after_id)
-            self.countdown_after_id = None
-        self.countdown_remaining = self.countdown_seconds
-        self.status_label.config(text=f"Status: Iniciando em {self.countdown_remaining}...")
-        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
-        self.update_idletasks()
-        self._update_countdown(mapping)
-
     def set_controls_state(self, state):
         if state == "idle":
             self.start_button.config(state="normal")
             self.pause_button.config(state="disabled", text="Pausar")
             self.stop_button.config(state="disabled")
-        elif state == "preparing":
-            self.start_button.config(state="disabled")
-            self.pause_button.config(state="disabled", text="Pausar")
-            self.stop_button.config(state="normal")
         elif state == "countdown":
             self.start_button.config(state="disabled")
             self.pause_button.config(state="normal")
