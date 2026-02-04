@@ -158,7 +158,7 @@ class App(tk.Tk):
         super().__init__()
         ensure_logging()
         self.title(APP_TITLE)
-        self.geometry("360x520")
+        self.geometry("720x520")
         self.config = load_config()
         self.file_path = ""
         self.total_lines = 0
@@ -168,7 +168,6 @@ class App(tk.Tk):
         self.countdown_seconds = 5
         self.countdown_remaining = 0
         self.countdown_after_id = None
-        self.column_values = []
         self._build_ui()
 
     def _build_ui(self):
@@ -217,10 +216,7 @@ class App(tk.Tk):
             combo = ttk.Combobox(config_frame, textvariable=var)
             combo.grid(row=idx, column=1, sticky="ew", padx=10, pady=5)
             combo.bind("<<ComboboxSelected>>", lambda _event: self.save_config())
-            combo.bind(
-                "<KeyRelease>",
-                lambda event, field=field: self.on_column_search(event, field),
-            )
+            combo.bind("<KeyRelease>", lambda _event: self.save_config())
             self.column_vars[field] = (var, combo)
 
         config_frame.columnconfigure(1, weight=1)
@@ -259,7 +255,6 @@ class App(tk.Tk):
                 columns = [col.strip() for col in first_row] or []
         if not columns:
             columns = [str(i) for i in range(1, 51)]
-        self.column_values = columns
 
         for field, (var, combo) in self.column_vars.items():
             combo["values"] = columns
@@ -269,20 +264,6 @@ class App(tk.Tk):
             elif columns:
                 var.set(columns[0])
 
-        self.save_config()
-
-    def on_column_search(self, event, field):
-        value = event.widget.get()
-        if value == "":
-            filtered = self.column_values
-        else:
-            value_lower = value.lower()
-            filtered = [
-                column
-                for column in self.column_values
-                if value_lower in str(column).lower()
-            ]
-        event.widget["values"] = filtered
         self.save_config()
 
     def update_total_lines(self):
@@ -336,6 +317,9 @@ class App(tk.Tk):
         if self.processing_thread and self.processing_thread.is_alive():
             messagebox.showinfo("Info", "Processamento já está em andamento.")
             return
+        if self.countdown_remaining > 0:
+            messagebox.showinfo("Info", "A contagem regressiva já está em andamento.")
+            return
         if pyautogui is None:
             messagebox.showerror(
                 "Erro",
@@ -349,27 +333,21 @@ class App(tk.Tk):
         if not mapping:
             messagebox.showwarning("Aviso", "Configure as colunas antes de iniciar.")
             return
-        if self.countdown_after_id is not None:
-            self.after_cancel(self.countdown_after_id)
-            self.countdown_after_id = None
         self.countdown_remaining = self.countdown_seconds
-        self.status_label.config(text=f"Status: Iniciando em {self.countdown_remaining}...")
+        self.status_label.config(text="Status: Aguardando início")
         self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
         self.update_idletasks()
         self._update_countdown(mapping)
 
     def _update_countdown(self, mapping):
         if self.stop_event.is_set():
-            self._reset_countdown_ui(status="Status: Parado")
-            return
-        if self.pause_event.is_set():
-            self.status_label.config(text="Status: Pausado (contagem)")
-            self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
-            self.countdown_after_id = self.after(200, lambda: self._update_countdown(mapping))
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
             return
         if self.countdown_remaining <= 0:
-            self.status_label.config(text="Status: Processando")
             self.countdown_label.config(text="Início em: 0s")
+            self.status_label.config(text="Status: Processando")
             self.processing_thread = threading.Thread(
                 target=self._run_processing,
                 args=(mapping,),
@@ -377,7 +355,6 @@ class App(tk.Tk):
             )
             self.processing_thread.start()
             return
-        self.status_label.config(text=f"Status: Iniciando em {self.countdown_remaining}...")
         self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
         self.countdown_remaining -= 1
         self.countdown_after_id = self.after(1000, lambda: self._update_countdown(mapping))
@@ -393,12 +370,12 @@ class App(tk.Tk):
                 self.stop_event,
             )
             self.after(0, lambda: self.status_label.config(text="Status: Finalizado"))
-            self.after(0, lambda: self._reset_countdown_ui())
+            self.after(0, lambda: self.countdown_label.config(text="Início em: -"))
         except Exception as exc:
             logging.exception("Erro durante processamento: %s", exc)
             self.after(0, lambda: messagebox.showerror("Erro", str(exc)))
             self.after(0, lambda: self.status_label.config(text="Status: Erro"))
-            self.after(0, lambda: self._reset_countdown_ui())
+            self.after(0, lambda: self.countdown_label.config(text="Início em: -"))
 
     def update_progress(self, processed, total):
         self.after(
@@ -412,28 +389,16 @@ class App(tk.Tk):
         self.total_label.config(text=f"Total de linhas: {total}")
 
     def toggle_pause(self):
-        in_countdown = self.countdown_remaining > 0 and (
-            self.processing_thread is None or not self.processing_thread.is_alive()
-        )
-        in_processing = self.processing_thread is not None and self.processing_thread.is_alive()
-
-        if not (in_countdown or in_processing):
+        if not self.processing_thread or not self.processing_thread.is_alive():
             return
-
         if self.pause_event.is_set():
             self.pause_event.clear()
             self.pause_button.config(text="Pausar")
-            if in_countdown:
-                self.status_label.config(text=f"Status: Iniciando em {self.countdown_remaining}...")
-            else:
-                self.status_label.config(text="Status: Processando")
+            self.status_label.config(text="Status: Processando")
         else:
             self.pause_event.set()
             self.pause_button.config(text="Continuar")
-            if in_countdown:
-                self.status_label.config(text="Status: Pausado (contagem)")
-            else:
-                self.status_label.config(text="Status: Pausado")
+            self.status_label.config(text="Status: Pausado")
 
     def stop_processing(self):
         if self.countdown_remaining > 0:
@@ -441,7 +406,9 @@ class App(tk.Tk):
             if self.countdown_after_id is not None:
                 self.after_cancel(self.countdown_after_id)
                 self.countdown_after_id = None
-            self._reset_countdown_ui(status="Status: Parado")
+            self.countdown_remaining = 0
+            self.countdown_label.config(text="Início em: -")
+            self.status_label.config(text="Status: Parado")
             return
         if not self.processing_thread or not self.processing_thread.is_alive():
             return
@@ -449,12 +416,6 @@ class App(tk.Tk):
         self.pause_event.clear()
         self.pause_button.config(text="Pausar")
         self.status_label.config(text="Status: Parando")
-
-    def _reset_countdown_ui(self, status=None):
-        self.countdown_remaining = 0
-        self.countdown_label.config(text="Início em: -")
-        if status is not None:
-            self.status_label.config(text=status)
 
 
 if __name__ == "__main__":
