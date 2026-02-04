@@ -335,6 +335,8 @@ class App(tk.Tk):
             return
         self.countdown_remaining = self.countdown_seconds
         self.status_label.config(text="Status: Aguardando início")
+        self.countdown_label.config(text=f"Início em: {self.countdown_remaining}s")
+        self.update_idletasks()
         self._update_countdown(mapping)
 
     def _update_countdown(self, mapping):
